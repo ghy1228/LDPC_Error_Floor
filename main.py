@@ -40,7 +40,7 @@ etha_value = 0 #1: Equal (Multi-loss), 0: Last iter
 learn_rate_value = 0.001
 
 batch_size = 20
-training_num = 50000
+training_num = 10000
 epoch_input = 30
 valid_flag = 1 #0: No validation set, 1: with validation set
 valid_num = 5000 
