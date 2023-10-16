@@ -3,7 +3,7 @@
 Implementation of boosting learning for LDPC codes described in ["Boosting Learning for LDPC Codes to Improve the Error-Floor Performance (NeurIPS 2023)"](https://arxiv.org/abs/2310.07194).
 
 <p align="center">
-<img src="BaseGraph/Block_Diagram.pdf" width="550px">
+<img src="BaseGraph/Block_Diagram.jpg" width="550px">
 </p>
 
 ## Abstract
