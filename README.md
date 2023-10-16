@@ -38,7 +38,7 @@ code is available at https://github.com/ghy1228/LDPC_Error_Floor.
 
 ## Script
 
-`python main.py
+python main.py
 
     
 ## License
