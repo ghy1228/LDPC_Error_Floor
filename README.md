@@ -30,11 +30,11 @@ code is available at https://github.com/ghy1228/LDPC_Error_Floor.
 
 ## Implementation Enviroment
 
-NVIDIA RTX 2080Ti
-Python = 3.6
-Cudatoolkit=10.0
-cudnn=7.6.5
-tensorflow=2.4.0
+- NVIDIA RTX 2080Ti  
+- Python = 3.6  
+- Cudatoolkit=10.0  
+- cudnn=7.6.5  
+- tensorflow=2.4.0  
 
 ## Script
 
