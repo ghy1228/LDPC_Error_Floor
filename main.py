@@ -67,9 +67,7 @@ noiseRandom = np.random.RandomState(noise_seed)  # noise seed
 train_on_zero_word = 1
 
 SNR_Matrix = Main_Functions.check_params(sampling_type, SNR_Matrix, sharing, iters_max, fixed_iter, iter_step)
-
 input_llr_training, input_codeword_training, input_llr_valid, input_codeword_valid, input_llr_test, input_codeword_test = Main_Functions.process_data(sampling_type, filename, training_num, valid_flag, valid_num, test_flag, test_num)
-
 M_proto, N_proto, code_Base, CN_deg_proto, VN_deg_proto, Num_edge_proto, code_rate, SNR_sigma = Main_Functions.init_parameter(code_Proto, SNR_Matrix,z_value, punct_start, punct_end)
 
 
@@ -158,7 +156,7 @@ while (training_iter_end <= iters_max):
                 
         ######################################################################
         end_time = time.time()
-        elapsed_time = end_time - start_time  # 걸린 시간 계산
+        elapsed_time = end_time - start_time 
         print(f'Epoch {curr_epoch}/{epoch_input} took {elapsed_time:.2f} seconds\n')
         trainable_variables = tf.global_variables()
         total_parameters = sum([sess.run(tf.reduce_prod(v.shape)) for v in trainable_variables])
@@ -168,7 +166,7 @@ while (training_iter_end <= iters_max):
 
 
         
-    #매 while loop
+    #while loop
     training_iter_start = training_iter_start + iter_step
     training_iter_end = training_iter_end + iter_step
 
