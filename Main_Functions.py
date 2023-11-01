@@ -69,8 +69,8 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
                 for h in range(0, z_value, 1):
                     Lift_M2[k * z_value + h, k * z_value + (h + Lift_num) % z_value] = 1
                 k = k + 1
-    Lift_Matrix1.append(Lift_M1) #E(V)Z (VN 출력) 에다가 Lift_Matrix1.T 를 곱해야 permutation 적용된 E(V)Z (CN 입력)로 변환됨  
-    Lift_Matrix2.append(Lift_M2) #E(C)Z (CN 출력) 에다가 Lift_Matrix2를 곱해야 permutation 적용된 E(C)Z (VN 입력)
+    Lift_Matrix1.append(Lift_M1) #E(V)Z
+    Lift_Matrix2.append(Lift_M2) #E(C)Z
 
 
 
