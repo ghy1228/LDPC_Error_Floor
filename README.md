@@ -22,6 +22,9 @@ Low-density parity-check (LDPC) codes have been successfully commercialized in c
 
 python main.py
 
+## Acknowledgements
+This project builds upon the implementations from the Neural Protograph LDPC Decoding project by KyrieTan. https://github.com/KyrieTan/Neural-Protograph-LDPC-Decoding 
+Portions of our code are based on or adapted from this original repository. We thank the contributors of that project for their valuable insights and contributions to the open-source community.
     
 ## License
 This repo is MIT licensed.
