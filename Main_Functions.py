@@ -5,7 +5,7 @@ tf.disable_v2_behavior()
 import sys
 import pdb
 
-def init_parameter(code_Proto, SNR_Matrix,z_value,punct_start,punct_end):
+def init_parameter(code_Proto, SNR_Matrix,z_value,punct_start,punct_end,short_start,short_end):
     M_proto, N_proto = code_Proto.shape
     code_Base = code_Proto.copy()
     for i in range(0, code_Proto.shape[0]):
@@ -17,13 +17,17 @@ def init_parameter(code_Proto, SNR_Matrix,z_value,punct_start,punct_end):
                 
     CN_deg_proto = np.sum(code_Base, axis=1)
     VN_deg_proto = np.sum(code_Base, axis=0)
-    
+   
     
     Num_edge_proto = np.sum(VN_deg_proto)
-    if punct_end > 0:
-        code_rate = 1.0 * (N_proto - M_proto) * z_value / (N_proto * z_value - (punct_end - punct_start + 1))
-    else:
-        code_rate = 1.0 * (N_proto - M_proto) * z_value / (N_proto * z_value)
+
+    punct_num = punct_end - punct_start + 1
+    short_num = short_end - short_start + 1
+
+    n = N_proto * z_value - punct_num - short_num
+    k = (N_proto - M_proto) * z_value - short_num
+    code_rate = 1.0 * k/n
+
         
     
         
@@ -39,7 +43,7 @@ def init_parameter(code_Proto, SNR_Matrix,z_value,punct_start,punct_end):
 
 ############################     init the connecting matrix between network layers   #################################
 
-def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z_value,VN_deg_proto,CN_deg_proto):
+def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z_value,VN_deg_proto,CN_deg_proto,punct_start, punct_end):
     Lift_Matrix1 = []
     Lift_Matrix2 = []
     W_odd2even = np.zeros((Num_edge_proto, Num_edge_proto), dtype=np.float32)
@@ -47,7 +51,7 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
     W_even2odd = np.zeros((Num_edge_proto, Num_edge_proto), dtype=np.float32)
     W_even2odd_with_self = np.zeros((Num_edge_proto, Num_edge_proto), dtype=np.float32)
     W_output = np.zeros((Num_edge_proto, N_proto), dtype=np.float32)
-    W_skipconn2odd = np.zeros((M_proto,Num_edge_proto),dtype=np.float32) 
+    W_skipconn2odd = np.zeros((M_proto,Num_edge_proto),dtype=np.float32)
 
     # init lifting matrix for cyclic shift
     Lift_M1 = np.zeros((Num_edge_proto * z_value, Num_edge_proto * z_value), np.float32)
@@ -69,22 +73,22 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
                 for h in range(0, z_value, 1):
                     Lift_M2[k * z_value + h, k * z_value + (h + Lift_num) % z_value] = 1
                 k = k + 1
-    Lift_Matrix1.append(Lift_M1) #E(V)Z
-    Lift_Matrix2.append(Lift_M2) #E(C)Z
+    Lift_Matrix1.append(Lift_M1) #To convert #E(V)Z (VN output) into the permutation-applied E(V)Z (CN input), you need to multiply it by `Lift_Matrix1.T`.
+    Lift_Matrix2.append(Lift_M2) #To convert #E(C)Z (CN output) into the permutation-applied E(C)Z (VN input), you need to multiply it by `Lift_Matrix2`.
 
 
 
     # init W_odd2even  variable node updating
     k = 0
-    vec_tmp = np.zeros((Num_edge_proto), dtype=np.float32)  # even layer index read with column
-    for j in range(0, code_Base.shape[1], 1):  # run over the columns
-        for i in range(0, code_Base.shape[0], 1):  # break after the first one
-            if (code_Base[i, j] == 1):  # finding the first one is ok
-                num_of_conn = int(np.sum(code_Base[:, j]))  # get the number of connection of the variable node
-                idx = np.argwhere(code_Base[:, j] == 1)  # get the indexes
-                for l in range(0, num_of_conn, 1):  # adding num_of_conn columns to W
+    vec_tmp = np.zeros((Num_edge_proto), dtype=np.float32)  
+    for j in range(0, code_Base.shape[1], 1): 
+        for i in range(0, code_Base.shape[0], 1): 
+            if (code_Base[i, j] == 1):  
+                num_of_conn = int(np.sum(code_Base[:, j])) 
+                idx = np.argwhere(code_Base[:, j] == 1)
+                for l in range(0, num_of_conn, 1):
                     vec_tmp = np.zeros((Num_edge_proto), dtype=np.float32)
-                    for r in range(0, code_Base.shape[0], 1):  # adding one to the right place
+                    for r in range(0, code_Base.shape[0], 1):
                         if (code_Base[r, j] == 1 and idx[l][0] != r):
                             idx_row = np.cumsum(code_Base[r, 0:j + 1])[-1] - 1
                             odd_layer_node_count = 0
@@ -126,14 +130,6 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
                 W_output[odd_layer_node_count + idx_row, k] = 1.0  #[E(C),N]
         k += 1
 
-    # init W_skipconn2odd  channel input
-    k = 0
-    for i in range(0, code_Base.shape[0], 1):
-        for j in range(0, code_Base.shape[1], 1):
-            if (code_Base[i, j] == 1):
-                W_skipconn2odd[i, k] = 1.0  #[M,E(C)]
-                k += 1      
-
     # init W_skipconn2even  channel input
     k = 0
     for j in range(0, code_Base.shape[1], 1):
@@ -142,6 +138,13 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
                 W_skipconn2even[j, k] = 1.0
                 k += 1
 
+    # init W_skipconn2odd  channel input
+    k = 0
+    for i in range(0, code_Base.shape[0], 1):
+        for j in range(0, code_Base.shape[1], 1):
+            if (code_Base[i, j] == 1):
+                W_skipconn2odd[i, k] = 1.0  #[M,E(C)]
+                k += 1            
                 
                 
     return Lift_Matrix1,Lift_Matrix2,W_odd2even,W_skipconn2even,W_even2odd,W_output,W_skipconn2odd,W_even2odd_with_self
@@ -151,8 +154,9 @@ def init_connecting_matrix(code_Proto,code_Base,N_proto,M_proto,Num_edge_proto,z
                 
 ##############################  bulid neural network ############################
 
-def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,curr_iter,iters_max,fixed_iter,fixed_init,training_iter_start,training_iter_end,N_proto,M_proto,Num_edge_proto,z_value,batch_size,Lift_Matrix1,Lift_Matrix2,W_odd2even,W_skipconn2even,W_even2odd,W_output,W_skipconn2odd,W_even2odd_with_self,q_bit,clip_LLR,clip_tanh):
+def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,target_node,curr_iter,iters_max,fixed_iter,fixed_init,training_iter_start,training_iter_end,N_proto,M_proto,Num_edge_proto,z_value,batch_size,Lift_Matrix1,Lift_Matrix2,W_odd2even,W_skipconn2even,W_even2odd,W_output,W_skipconn2odd,W_even2odd_with_self,q_bit,clip_LLR):
     
+#Starting with VN operations, which is different from the standard decoding method that begins with CN operations.
     
     xa = net_dict['xa']
     ya = net_dict['ya']
@@ -218,9 +222,12 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
     
     if decoding_type == 2:
         x2 = Cal_MSA_Q_TF(x2,q_bit)
+    else:
+        x2 = tf.clip_by_value(x2, clip_value_min=-clip_LLR, clip_value_max=clip_LLR)
+
+
     if decoding_type == 1 or decoding_type == 2:
-        x2 = tf.add(x2, 0.0001 * (1 - tf.to_float(tf.abs(x2) > 0)))  # 0 -> 0.0001
-    
+        x2 = tf.add(x2, 0.0001 * (1 - tf.to_float(tf.abs(x2) > 0)))  # 0 -> 0.0001 temporaly
     x_tile = tf.tile(x2, multiples=[1, 1, Num_edge_proto]) #[B,Z,E(V)E(V)]
     W_input_reshape = tf.reshape(W_even2odd.transpose(), [-1]) 
     
@@ -229,23 +236,26 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
     x2_1 = tf.reshape(x_tile_mul, [batch_size, z_value, Num_edge_proto, Num_edge_proto]) 
 
     if decoding_type == 0:
-        x2_clip = 0.5 * tf.clip_by_value(x2_1, clip_value_min=-clip_tanh, clip_value_max=clip_tanh)
-        x2_tanh = tf.tanh(-x2_clip)
-        x2_abs = tf.add(x2_tanh, 1 - tf.to_float(tf.abs(x2_tanh) > 0))
+        x2_tanh = tf.tanh(-0.5 * x2_1) 
+        x2_abs = tf.add(x2_tanh, 1 - tf.to_float(tf.abs(x2_tanh) > 0))  #If `Punctured_LLR = 0`, there’s a possibility of malfunction because it becomes hard to distinguish between an initialized value of 0 and a punctured LLR. To address this, we set `punctured_LLR` to `-0.001` for training.
         x3 = tf.reduce_prod(x2_abs, reduction_indices=3)
-        x_output_0 = -tf.log(tf.div(1 + x3, 1 - x3))
-    elif decoding_type == 1 or decoding_type == 2:
-        x2_abs = tf.add(tf.abs(x2_1), 10000 * (1 - tf.to_float(tf.abs(x2_1) > 0)))
+
+        epsilon = 1e-7
+        x3_clipped = tf.clip_by_value(x3, clip_value_min=-1 + epsilon, clip_value_max=1 - epsilon)
+        x_output_0 = -2 * tf.atanh(x3_clipped)
+
+    elif decoding_type == 1 or decoding_type == 2 or decoding_type == 3:
+        x2_abs = tf.add(tf.abs(x2_1), 10000 * (1 - tf.to_float(tf.abs(x2_1) > 0))) # Make sure that the zeros resulting from multiplying with W_input_reshape do not become the minimum value.
         x3 = tf.reduce_min(x2_abs, axis=3)
-        x3 = tf.add(x3, -0.0001 * (1 - tf.to_float(tf.abs(x3) > 0.0001))) # 0.0001 -> 0
+        x3 = tf.add(x3, -0.0001 * (1 - tf.to_float(tf.abs(x3) > 0.0001))) # 0.0001 -> 0 
         x2_2 = -x2_1 
         x4 = tf.add(tf.zeros((batch_size, z_value, Num_edge_proto, Num_edge_proto)), 1 - 2 * tf.to_float(x2_2 < 0))
         x4_prod = -tf.reduce_prod(x4, axis=3)
         x_output_0 = tf.multiply(x3, tf.sign(x4_prod))
         
 
+        
                 
-    
     x_output_0 = tf.transpose(x_output_0, [0, 2, 1])  #[B,Z,E(C)] -> [B,E(C),Z]
     x_output_0 = tf.reshape(x_output_0, [batch_size, z_value * Num_edge_proto])
     x_output_0 = tf.matmul(x_output_0, Lift_Matrix2[0]) #[B,Z,E(C)]
@@ -253,8 +263,7 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
     x_output_0 = tf.transpose(x_output_0, [0, 2, 1]) #[B,Z,E(C)]
     
 
-    
-    
+    # revised by khy 22.01.01
     if sharing[0] == 0:             
         x_output_1 = tf.abs(x_output_0)
     elif sharing[0] == 1:   
@@ -300,10 +309,11 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
     
     if decoding_type == 2:
         x_output_2 = Cal_MSA_Q_TF(x_output_2,q_bit)
-        
+    else:
+        x_output_2 = tf.clip_by_value(x_output_2, clip_value_min=-clip_LLR, clip_value_max=clip_LLR)
+
+
     net_dict["LLRa{0}".format(curr_iter+1)] = tf.multiply(x_output_2, tf.sign(x_output_0)) # [B,Z,E(C)], C->V Message
-    
-    
     y_output_2 = tf.matmul(net_dict["LLRa{0}".format(curr_iter+1)], W_output) #[B,Z,E(C)]X[E(C),N] = [B,Z,N], Sum_Input_LLR
     y_output_3 = tf.transpose(y_output_2, [0, 2, 1]) # B,Z,N -> B,N,Z
     
@@ -315,16 +325,24 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
     y_output_4 = tf.clip_by_value(y_output_4, clip_value_min=-clip_LLR, clip_value_max=clip_LLR)
         
     net_dict["ya_output{0}".format(curr_iter)] = tf.reshape(y_output_4, [batch_size, N_proto * z_value], name='ya_output'.format(curr_iter))
+
+    if target_node > 0:
+        y_output_5 = y_output_4[:,:target_node,:]
+    else:
+        target_node = N_proto 
+        y_output_5 = y_output_4
+        
+    net_dict["ya_output_target{0}".format(curr_iter)] = tf.reshape(y_output_5, [batch_size, target_node * z_value], name='ya_output_target'.format(curr_iter))
     
-    
+    # Loss    
     if curr_iter == training_iter_end - 1 and sampling_type != 2 and fixed_iter != iters_max:
         if loss_type <= 2:
             loss_ftn = 0
             temp_coeff = 0
             for t in range(training_iter_end - 1,max(training_iter_start - fixed_init,fixed_iter) - 1,-1):
-                x_temp = net_dict["ya_output{0}".format(t)]
+                x_temp = net_dict["ya_output_target{0}".format(t)]
                 if loss_type == 0:
-                    loss_ftn = loss_ftn + pow(net_dict['etha'],(training_iter_end - 1 - t)) * tf.nn.sigmoid_cross_entropy_with_logits(labels=ya, logits = x_temp)
+                    loss_ftn = loss_ftn + pow(net_dict['etha'],(training_iter_end - 1 - t)) * tf.nn.sigmoid_cross_entropy_with_logits(labels=ya[:,:target_node* z_value], logits = x_temp)
                 elif loss_type == 1:
                     loss_ftn = loss_ftn + pow(net_dict['etha'],(training_iter_end - 1 - t)) * tf.math.sigmoid(x_temp) #<-only for all zero codeword
                 elif loss_type == 2:
@@ -334,18 +352,8 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
                 temp_coeff = temp_coeff + pow(net_dict['etha'],(training_iter_end - 1 - t))
             loss_ftn = loss_ftn / temp_coeff
             
-        
-        elif loss_type == 3:#<-only for all zero codeword
-            x_temp = net_dict["ya_output{0}".format(training_iter_start)]
-            loss_ftn = tf.reshape(1/2*(1-sign_through(tf.reduce_min(-x_temp, axis=1))),[batch_size,1])
-            for t in range(training_iter_end - 1,max(training_iter_start - fixed_init,fixed_iter) - 1,-1):
-                x_temp = net_dict["ya_output{0}".format(t)]
-                curr_uncor_idx = tf.reshape(1/2*(1-sign_through(tf.reduce_min(-x_temp, axis=1))),[batch_size,1])
-                loss_ftn = tf.concat([loss_ftn,curr_uncor_idx],axis = 1)
-            loss_ftn = tf.reduce_min(loss_ftn,axis = 1) 
 
-
-        net_dict["lossa"] = 1.0 * tf.reduce_mean(loss_ftn, name='lossa')
+            net_dict["lossa"] = 1.0 * tf.reduce_mean(loss_ftn, name='lossa')
             
         
         
@@ -370,14 +378,15 @@ def build_neural_network(net_dict,sharing,decoding_type,sampling_type,loss_type,
                                                             net_dict['learn_rate']).minimize(net_dict["lossa"], var_list = current_vars)
         
     if curr_iter == 0:
-        net_dict["ya_output_all"] = net_dict["ya_output{0}".format(curr_iter)]
+        net_dict["ya_output_all"] = net_dict["ya_output_target{0}".format(curr_iter)]
     else:
-        net_dict["ya_output_all"] = tf.concat([net_dict["ya_output_all"],net_dict["ya_output{0}".format(curr_iter)]],axis = 0)
+        net_dict["ya_output_all"] = tf.concat([net_dict["ya_output_all"],net_dict["ya_output_target{0}".format(curr_iter)]],axis = 0)
         
     return net_dict
 
-def weight_init(net_dict, out_filename, sharing, Num_edge_proto, M_proto, N_proto, Min_weight, Max_weight, init_weight, init_VN_weight, training_iter_start, training_iter_end, fixed_iter):
-
+def weight_init(net_dict, init_from_file, out_filename, iters_max, training_iter_start, sharing, Num_edge_proto, M_proto, N_proto, Min_weight, Max_weight, init_weight, init_VN_weight,  training_iter_end, fixed_iter):
+    if init_from_file == 1:
+        In_weight_file = f"./Weights/{out_filename}_In_Weight_End{iters_max}.txt"
     if training_iter_start > 0:
         Fixed_weight_file = f"./Weights/{out_filename}_Opt_Weight_End{training_iter_start}.txt"
         
@@ -410,6 +419,10 @@ def weight_init(net_dict, out_filename, sharing, Num_edge_proto, M_proto, N_prot
                 if curr_iter < training_iter_start:    
                     row_idx1 += 1
                     data = np.loadtxt(Fixed_weight_file, skiprows = 1 + row_idx1, max_rows = 1, delimiter='\t')
+                    init = tf.constant_initializer(data)
+                elif init_from_file == 1:
+                    row_idx2 += 1
+                    data = np.loadtxt(In_weight_file, skiprows = 1 + row_idx2, max_rows = 1, delimiter='\t')
                     init = tf.constant_initializer(data)
                 else:
                     if para_init == -1:
@@ -448,9 +461,12 @@ def sign_through(x):
 
 
 def QMS_clipping(x,q_bit):
-    
-    if q_bit == 5:
+    if q_bit == 6:
+        return tf.clip_by_value(x, -15.5, 15.5)
+    elif q_bit == 5:
         return tf.clip_by_value(x, -7.5, 7.5)
+    elif q_bit == -5:
+        return tf.clip_by_value(x, -15, 15)
     elif q_bit == 4:
         return tf.clip_by_value(x, -7, 7)
     elif q_bit == 3:
@@ -462,14 +478,21 @@ def Cal_MSA_Q_TF(x,q_bit):
     a op that behave as f(x) in forward mode,
     but as g(x) in the backward mode.
     '''
-    if q_bit == 5:
+
+    #q_value = QMS_clipping(tf.round(x / level)* level,q_bit)
+    if q_bit == 6:
+        q_value = tf.clip_by_value(tf.round(x),-15.5,15.5) #(-7.5 -7.0 -6.5 ... 6.5 7.0 7.5) Quantizer  
+    elif q_bit == 5:
         q_value = tf.clip_by_value(tf.round(x * 2)/2,-7.5,7.5) #(-7.5 -7.0 -6.5 ... 6.5 7.0 7.5) Quantizer  
+    elif q_bit == -5:
+        q_value = tf.clip_by_value(tf.round(x),-15,15) #(-15 -14 -13 ... 13 14 15) Quantizer  
     elif q_bit == 4:
         q_value = tf.clip_by_value(tf.round(x),-7,7) #(-7.0 -6.0 ... 6.0 7.0) Quantizer  
     elif q_bit == 3:
-        q_Value = tf.clip_by_value(tf.round(x/2)*2,-6,6) #(-6,-4,-2,0,2,4,6) Quantizer
+        q_value = tf.clip_by_value(tf.round(x/2)*2,-6,6) #(-6,-4,-2,0,2,4,6) Quantizer
         
     return QMS_clipping(x,q_bit) + tf.stop_gradient(q_value-QMS_clipping(x,q_bit)) #foward = q_value, gradient = 1
+
 
 
 def check_params(sampling_type, SNR_Matrix, sharing, iters_max, fixed_iter, iter_step):
@@ -530,7 +553,7 @@ def process_data(sampling_type, filename, training_num, valid_flag, valid_num, t
         else:
             input_llr_valid = []
             input_codeword_valid = []
-            test_num = 0
+            valid_num = 0
 
         if test_flag == 1:
             uncor_filename = "[Uncor]_{0}_Test".format(filename)
@@ -554,3 +577,14 @@ def process_data(sampling_type, filename, training_num, valid_flag, valid_num, t
 
         
     
+        
+    
+
+def get_num(ratio, sample_num, valid_num=None):
+    if ratio <= 1:
+        num = round(ratio * sample_num)
+    elif ratio > 1:
+        num = ratio
+    elif ratio == -1 and valid_num is not None:
+        num = sample_num - valid_num
+    return num

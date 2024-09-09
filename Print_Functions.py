@@ -1,7 +1,7 @@
 import numpy as np
 import math
 import shutil
-import pdb
+import time
 
 def read_uncor_llr(input_llr,input_codeword,batch_idx,batch_size,code_n,Z):
     X =  -np.reshape(input_llr[batch_idx * batch_size:(batch_idx + 1) * batch_size,...],[batch_size,code_n,Z]) # defined as p1/p0
@@ -11,8 +11,12 @@ def read_uncor_llr(input_llr,input_codeword,batch_idx,batch_size,code_n,Z):
 
 def Cal_MSA_Q(x,q_bit):
     
-    if q_bit == 5:
+    if q_bit == 6:
+        q_value = np.clip(np.round(x),-15.5,15.5) #(-15.5 -15.0  ...  15.0 15.5) Quantizer  
+    elif q_bit == 5:
         q_value = np.clip(np.round(x * 2)/2,-7.5,7.5) #(-7.5 -7.0 -6.5 ... 6.5 7.0 7.5) Quantizer  
+    elif q_bit == -5:
+        q_value = np.clip(np.round(x),-15,15) #(-15 -14 ... 14 15) Quantizer  
     elif q_bit == 4:
         q_value = np.clip(np.round(x),-7,7) #(-7.0 -6.0 ... 6.0 7.0) Quantizer  
     elif q_bit == 3:
@@ -22,7 +26,7 @@ def Cal_MSA_Q(x,q_bit):
 
     
 #get train samples
-def create_mix_epoch(scaling_factor, wordRandom, noiseRandom, batch_size, code_n, code_k, Z, code_GM, is_zeros_word, decoding_type, punct_start, punct_end,q_bit):
+def create_mix_epoch(scaling_factor, wordRandom, noiseRandom, batch_size, code_n, code_k, Z, code_GM, is_zeros_word, decoding_type, punct_start, punct_end, short_start, short_end,q_bit,clip_LLR):
 
     X = np.zeros([1, code_n * Z], dtype=np.float32)
     Y = np.zeros([1, code_n * Z], dtype=np.int64)
@@ -47,7 +51,13 @@ def create_mix_epoch(scaling_factor, wordRandom, noiseRandom, batch_size, code_n
             
             
             if punct_start > 0:
-                x_llr_i[0,punct_start - 1:punct_end] = 0
+                if decoding_type == 0:
+                    x_llr_i[0,punct_start - 1:punct_end] = 0.001 #For training of Sum-Product decoding
+                else:
+                    x_llr_i[0,punct_start - 1:punct_end] = 0
+
+            if short_start > 0:
+                x_llr_i[0,short_start - 1:short_end] = -clip_LLR
             
             X = np.vstack((X, x_llr_i))
             Y = np.vstack((Y, Y_i))
@@ -63,7 +73,7 @@ def create_mix_epoch(scaling_factor, wordRandom, noiseRandom, batch_size, code_n
 
 def print_weight(out_filename, training_iter_end, sharing, fixed_iter, sess, net_dict):
     out_file = open( f"./Weights/{out_filename}_Weight_End{training_iter_end}.txt",'w')
-    print(f"{sharing[0]} {sharing[1]} {sharing[2]}\n",file = out_file)
+    print("{0} {1} {2}\n".format(*sharing),file = out_file)
     
 
     #Weights print
@@ -117,8 +127,9 @@ def write_uncor_file(uncor_flag,training_received_data, code_length):
         
 
 
-def compute_results(SNR_sigma, wordRandom, noiseRandom, sample_num, batch_size, sampling_type, N_proto, M_proto, z_value, train_on_zero_word, input_llr, input_codeword, training_iter_end, sess, net_dict, etha_value, decoding_type, punct_start, punct_end,q_bit):
-    
+def compute_results(sample_num, input_llr, input_codeword, SNR_sigma, wordRandom, noiseRandom,  batch_size, sampling_type, N_proto, M_proto, z_value, train_on_zero_word, training_iter_end, sess, net_dict, etha_curr, decoding_type, punct_start, punct_end, short_start, short_end, q_bit,clip_LLR):
+    start_time = time.time()  
+
     Results = np.zeros((4, SNR_sigma.size), dtype=np.float32) #BER, FER_last, FER, loss
 
     batch_num = math.floor(sample_num / batch_size)
@@ -129,15 +140,15 @@ def compute_results(SNR_sigma, wordRandom, noiseRandom, sample_num, batch_size, 
                 training_received_data, training_coded_bits = create_mix_epoch(SNR_point, wordRandom, noiseRandom, batch_size,
                                                                        N_proto, N_proto - M_proto, z_value,
                                                                        [],
-                                                                       train_on_zero_word, decoding_type, punct_start, punct_end,q_bit)
+                                                                       train_on_zero_word, decoding_type, punct_start, punct_end, short_start, short_end,q_bit,clip_LLR)
             elif sampling_type == 1:
                 training_received_data, training_coded_bits = read_uncor_llr(input_llr,input_codeword,batch_idx,batch_size,N_proto,z_value)
             
             if sampling_type == 2:
-                y_pred_all = sess.run(fetches=net_dict["ya_output_all"], feed_dict={net_dict['xa']: training_received_data, net_dict['ya']: training_coded_bits, net_dict['etha']: etha_value, net_dict['learn_rate']: 0})
+                y_pred_all = sess.run(fetches=net_dict["ya_output_all"], feed_dict={net_dict['xa']: training_received_data, net_dict['ya']: training_coded_bits, net_dict['etha']: etha_curr, net_dict['learn_rate']: 0})
                 loss_batch = 0
             else:
-                y_pred_all, loss_batch = sess.run(fetches=[net_dict["ya_output_all"], net_dict["lossa"]], feed_dict={net_dict['xa']: training_received_data, net_dict['ya']: training_coded_bits, net_dict['etha']: etha_value, net_dict['learn_rate']: 0})
+                y_pred_all, loss_batch = sess.run(fetches=[net_dict["ya_output_all"], net_dict["lossa"]], feed_dict={net_dict['xa']: training_received_data, net_dict['ya']: training_coded_bits, net_dict['etha']: etha_curr, net_dict['learn_rate']: 0})
                 
             
             ber_last_batch, fer_last_batch, fer_batch, uncor_flag, error_num = calc_ber_fer(y_pred_all, training_iter_end, training_coded_bits, batch_size)
@@ -149,65 +160,69 @@ def compute_results(SNR_sigma, wordRandom, noiseRandom, sample_num, batch_size, 
             Results[2, SNR_idx] += fer_batch / batch_num
             Results[3, SNR_idx] += loss_batch / batch_num
 
-    return Results
+    time_took = time.time() - start_time
+
+    return Results,time_took
     
-def compute_opt_value(opt_value, ber_last_SNR, fer_last_SNR, fer_SNR, loss_SNR):
+def compute_opt_value(opt_value, opt_result_print, ber_last_SNR, fer_last_SNR, fer_SNR, loss_SNR):
     opt_print_flag = False
-    if opt_value > np.sum(loss_SNR):
+    if opt_result_print == 0 and opt_value > np.sum(ber_last_SNR):
+        opt_value = np.sum(ber_last_SNR)
+        opt_print_flag = True
+    elif opt_result_print == 1 and opt_value > np.sum(fer_last_SNR):
+        opt_value = np.sum(fer_last_SNR)
+        opt_print_flag = True
+    elif opt_result_print == 2 and opt_value > np.sum(fer_SNR):
+        opt_value = np.sum(fer_SNR)
+        opt_print_flag = True
+    elif opt_result_print == 3 and opt_value > np.sum(loss_SNR):
         opt_value = np.sum(loss_SNR)
         opt_print_flag = True
     return opt_value, opt_print_flag
 
-def save_results_to_file(Perf_filename,out_filename, training_iter_start, training_iter_end, curr_epoch, epoch_input, ber_last_SNR, fer_last_SNR, fer_SNR, loss_SNR, opt_value, opt_print_flag, test_flag = 0):
+
+
+def print_result(Results, opt_value, Perf_filename, out_filename, training_iter_end, opt_result_print, opt_print_flag,test_time):
+
     with open(Perf_filename,'a') as out_file:
-        
-        if test_flag == False:
-            print(f'training_iter_start: {training_iter_start} training_iter_end: {training_iter_end} epoch: [{curr_epoch}/{epoch_input}]', file=out_file)
-            
-            print('Valid Results', file=out_file)
-            print(f'Opt value: {opt_value}', file=out_file)
+
+        if test_time == False:
+            opt_value, opt_print_flag = compute_opt_value(opt_value, opt_result_print, Results[0,:], Results[1,:], Results[2,:], Results[3,:])
+
+            print(f'Valid_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}')
+            print(f"opt_value: {FTE([opt_value])}\n")
+
+            print(f'Valid_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}',file=out_file)
+            print(f"opt_value: {FTE([opt_value])}\n",file=out_file)
+
             if opt_print_flag == True:
-                shutil.copyfile(f"./Weights/{out_filename}_Weight_End{training_iter_end}.txt",
-                        f"./Weights/{out_filename}_Opt_Weight_End{training_iter_end}.txt")
+                shutil.copyfile(f"./Weights/{out_filename}_Weight_End{training_iter_end}.txt",f"./Weights/{out_filename}_Opt_Weight_End{training_iter_end}.txt")
         else:
-            print('Test Results', file=out_file)
-            print(f'Opt value: {opt_value}', file=out_file)
+            if opt_print_flag == True:
+                opt_value, _ = compute_opt_value(100000, opt_result_print, Results[0,:], Results[1,:], Results[2,:], Results[3,:])
+            else:
+                opt_value = opt_value
+            print(f'Test_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}')
+            print(f"opt_value: {FTE([opt_value])}\n")
 
-        np.savetxt(out_file, ber_last_SNR.reshape(1,-1), fmt='%.2e', delimiter=' ')
-        np.savetxt(out_file, fer_last_SNR.reshape(1,-1), fmt='%.2e', delimiter=' ')
-        np.savetxt(out_file, fer_SNR.reshape(1,-1), fmt='%.2e', delimiter=' ')
-        np.savetxt(out_file, loss_SNR.reshape(1,-1), fmt='%.2e', delimiter=' ')
-        
-        print('', file=out_file)
-    
-
+            print(f'Test_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}',file=out_file)
+            print(f"opt_value: {FTE([opt_value])}\n",file=out_file)
 
 
-def print_result(input_llr, input_codeword, curr_epoch, opt_value, Perf_filename, out_filename, sharing, sampling_type, decoding_type, punct_start, punct_end, training_iter_start, training_iter_end, sample_num, batch_size, SNR_sigma, wordRandom, noiseRandom, z_value, q_bit,  N_proto, M_proto, train_on_zero_word, etha_curr, sess, net_dict , epoch_input, opt_print_flag,test_flag):
-
-    Results = compute_results(SNR_sigma, wordRandom, noiseRandom, sample_num, batch_size, sampling_type, N_proto, M_proto, z_value, train_on_zero_word, input_llr, input_codeword, training_iter_end, sess, net_dict, etha_curr, decoding_type, punct_start, punct_end, q_bit)
-    
-    if test_flag == False:
-        opt_value, opt_print_flag = compute_opt_value(opt_value, Results[0,:], Results[1,:], Results[2,:], Results[3,:])
         
-
-        print(f'Valid_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}')
-        
-        print("opt_value: {0}\n".format(opt_value))
-    else:
-        if opt_print_flag == True:
-            opt_value, _ = compute_opt_value(10000, Results[0,:], Results[1,:], Results[2,:], Results[3,:])
-        
-        print(f'Test_Result\nBER_last: {FTE(Results[0,:])}\nFER_last: {FTE(Results[1,:])}\nFER: {FTE(Results[2,:])}\nloss: {FTE(Results[3,:])}')
-        
-        print("opt_value: {0}\n".format(opt_value))
-        
-        
-    save_results_to_file(Perf_filename,out_filename, training_iter_start, training_iter_end, curr_epoch, epoch_input, Results[0,:], Results[1,:], Results[2,:], Results[3,:], opt_value,opt_print_flag,test_flag)
-    
     
     return opt_value,opt_print_flag
 
+
+def print_train_result(curr_epoch, Perf_filename, training_iter_start, training_iter_end, epoch_input, avg_train_loss):
+
+        
+    with open(Perf_filename,'a') as out_file:
+        print(f'* Training_iter_start: {training_iter_start} training_iter_end: {training_iter_end} epoch: [{curr_epoch}/{epoch_input}]')
+        print(f"Training loss: {FTE([avg_train_loss])}")
+        
+        print(f'* Training_iter_start: {training_iter_start} training_iter_end: {training_iter_end} epoch: [{curr_epoch}/{epoch_input}]', file=out_file)
+        print(f"Training loss: {FTE([avg_train_loss])}",file=out_file)
 
 def FTE(arr, precision=2): #format to exponential
     return [f"{val:.{precision}e}" for val in arr]
