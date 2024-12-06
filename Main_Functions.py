@@ -527,7 +527,7 @@ def process_data(sampling_type, filename, training_num, valid_flag, valid_num, t
     if sampling_type == 1:
 
         uncor_filename = "[Uncor]_{0}".format(filename)
-        input_llr_training = np.loadtxt(f"./Input/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
+        input_llr_training = np.loadtxt(f"./Inputs/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
         if input_llr_training.ndim > 1:
             input_llr_training = np.delete(input_llr_training, [0,1,2], 1)
 
@@ -541,7 +541,7 @@ def process_data(sampling_type, filename, training_num, valid_flag, valid_num, t
 
         if valid_flag == 1:
             uncor_filename = "[Uncor]_{0}_Valid".format(filename)
-            input_llr_valid = np.loadtxt(f"./Input/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
+            input_llr_valid = np.loadtxt(f"./Inputs/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
             if input_llr_valid.ndim > 1:
                 input_llr_valid = np.delete(input_llr_valid, [0,1,2], 1)
             if input_llr_valid.shape[0] < valid_num:
@@ -557,7 +557,7 @@ def process_data(sampling_type, filename, training_num, valid_flag, valid_num, t
 
         if test_flag == 1:
             uncor_filename = "[Uncor]_{0}_Test".format(filename)
-            input_llr_test = np.loadtxt(f"./Input/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
+            input_llr_test = np.loadtxt(f"./Inputs/{uncor_filename}.txt", dtype=np.float32, delimiter='\t')
             if input_llr_test.ndim > 1:
                 input_llr_test = np.delete(input_llr_test, [0,1,2], 1)
             if input_llr_test.shape[0] < test_num:
