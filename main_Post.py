@@ -22,7 +22,7 @@ config.gpu_options.allow_growth = True
 filename = "wman_N0576_R34_z24"
 
 #0: No weights // 1: edge,iter // 2: node, iter // 3: iter // 4: edge (Tempolar sharing)  // 5: Node (Tempolar sharing)
-sharing     = [3,  0,  3] #CN_Weight,UCN_Weight, VN_Weight
+sharing     = [3,  3,  3] #CN_Weight,UCN_Weight, VN_Weight
 sampling_type = 1 #0: Default, 1: Read_Uncor, 2: Collect_Uncor
 decoding_type = 2 #0:SP, 1:MS,  2: QMS
 q_bit = 5 #for QMS
@@ -47,12 +47,12 @@ learn_rate_step = 0
 
 
 batch_size = 20
-training_num = 50000
+training_num = 10000
 epoch_input = 200
 valid_flag = 1 #0: No validation set, 1: with validation set
-valid_num = 10000 #
+valid_num = 5000 #
 test_flag = 1 #0: No test set, 1: with test set
-test_num = 10000
+test_num = 5000
 
 init_from_file = 0 #Transfer Weights
 init_weight = 1 
